@@ -12,6 +12,7 @@ library(ggplot2)
 library(sswidb)
 library(sswids)
 library(treemap)
+library(tidyr)
 #csv to send to Megan
 #summarize and visualize by workflow (and csv to share): prop blanks, prop deer, prop “interesting” species (according to SPPMODE), prop final data, species diversity, average/SD number of triggers per cam loc seq no, first and last retirement date – Eli 
 
@@ -23,10 +24,12 @@ library(treemap)
 
 #sswidb::sswidb_species_precision for finald ata classification, final data classification inverse of unknown
 #sswidb::sswidb_species
+#deer squirrel and blank
+# tree map of recent workflows 6-8
 ```
 
 
-```{r}
+```{r, include=FALSE}
 #human blank or specific species as final consensus
 Zoon <- read.csv("./ZooniverseData_ForEli_2024-11-19.csv")
 
@@ -35,8 +38,8 @@ RyanIntSpp <- c("PHOTO_TAG_BADGER", "PHOTO_TAG_FOX_GRAY", "PHOTO_TAG_GROUSE","PH
 IntSpp <- c("PHOTO_TAG_BADGER", "PHOTO_TAG_BEAR", "PHOTO_TAG_BEAVER", "PHOTO_TAG_BOBCAT", "PHOTO_TAG_COUGAR", "PHOTO_TAG_COYOTE", "PHOTO_TAG_CRANE_WHOOPING", "PHOTO_TAG_ELK", "PHOTO_TAG_FISHER", "PHOTO_TAG_FOX_GRAY", "PHOTO_TAG_FOX_RED", "PHOTO_TAG_MARTEN", "PHOTO_TAG_MINK", "PHOTO_TAG_MOOSE", "PHOTO_TAG_OPOSSUM", "PHOTO_TAG_OTTER",
             "PHOTO_TAG_PHEASANT", "PHOTO_TAG_PORCUPINE", "PHOTO_TAG_SKUNK_STRIPED", "PHOTO_TAG_WEASEL", "PHOTO_TAG_WOLF", "PHOTO_TAG_WOODCHUCK")
  #still need squireels and humans 
- "^DEER$"
- "^SQUIRRELSANDCHIPMUNKS$"
+# "^DEER$"
+# "^SQUIRRELSANDCHIPMUNKS$"
  
 connect_to_sswidb(db_version = 'PROD') 
 species <- sswidb::sswidb_species(conn)
@@ -61,7 +64,6 @@ classprec3$SPP_MODE[classprec3$SPECIES_NAME == "Other Small Mammal"] <- "PHOTO_T
 Zoon2 <- left_join(Zoon, classprec3[,c(3,6)], by=join_by(METADATA_GROUP_CODE == SPP_MODE))
 Zoon2$PRECISION[Zoon2$METADATA_GROUP_CODE == "PHOTO_TAG_HUMAN"] <- 1
 
-WorkFlowLength <- Zoon%>%group_by(WORKFLOW_ID)%>%summarise(WorkflowLength=length(unique(RETIRED_DATE)), start)
 
 #finaldata1 calculated as inverse of PHOTO_TAG_UNKNOWN not considering if accurcay is good enough, this is where finaldata2 comes in
 Zoon3 <- Zoon2%>%group_by(WORKFLOW_ID)%>%summarise(WorkflowLength=length(unique(RETIRED_DATE)),                                                                          First.Date=as.POSIXct(min(RETIRED_DATE), "%Y-%m-%d %H:%M:%S"),
@@ -81,25 +83,28 @@ Diversity <-  Zoon2%>%filter(METADATA_GROUP_CODE %in%                           
                      Simpson=1/sum(prop.animal^2))
 
 CameraMeasures <-  Zoon2%>%group_by(WORKFLOW_ID, CAMERA_LOCATION_SEQ_NO)%>%summarise(NperCam=n())%>%
-                  group_by(WORKFLOW_ID)%>%summarise(mean.tags.percam=mean(NperCam), sd.tags.percam=sd(NperCam))
+                  group_by(WORKFLOW_ID)%>%summarise(mean.tags.percam=mean(NperCam), median.tags.percam=                                                                   median(NperCam), sd.tags.percam=sd(NperCam),
+                                                    max.tags=max(NperCam), min.tags=min(NperCam))
 
-Zoon4 <- cbind(Zoon3, CameraMeasures[, 2:3], Diversity[,2:3])
+Zoon4 <- cbind(Zoon3, CameraMeasures[, 2:4], Diversity[,2:3])
 
 FinalDataTree <- Zoon2%>%mutate(FinalData=ifelse(METADATA_GROUP_CODE != "PHOTO_TAG_UNKNOWN" & PRECISION >= 0.95 | METADATA_GROUP_CODE == "PHOTO_TAG_BLANK", "FINAL", "NOT FINAL"))%>%group_by(WORKFLOW_ID,METADATA_GROUP_CODE, FinalData)%>%summarise(N=n())%>%mutate(METADATA_GROUP_CODE = gsub(pattern = "PHOTO_TAG_", replacement = "", x = METADATA_GROUP_CODE))
 
-```
 
-```{r blanks}
-BlankProp <- Zoon%>%group_by(WORKFLOW_ID)%>%summarise(N=n(), blank=sum(METADATA_GROUP_CODE == "PHOTO_TAG_BLANK"), propblank= blank/N)
-
-ggplot(BlankProp, aes(x=WORKFLOW_ID, y=propblank)) + geom_point()
 
 ```
 
-```{r final data}
+```{r blanks, echo=FALSE}
 
 
-ggplot(Zoon3, aes(x=WORKFLOW_ID, y=propfinaldata)) + geom_point() + geom_line()
+ggplot(Zoon4, aes(x=WORKFLOW_ID, y=prop.blank)) + geom_point() + geom_line() + labs(title = "Proportion Blank by Workflow", x="Workflow ID", y="proportion blank")
+
+```
+
+```{r final data, echo=FALSE, message=FALSE}
+
+
+ggplot(Zoon4, aes(x=WORKFLOW_ID, y=prop.finaldata)) + geom_point() + geom_line() + labs(title = "Proportion Final Data by Workflow", x="Workflow ID", y="proportion final")
 
 
 treemap(FinalDataTree,
@@ -108,15 +113,58 @@ treemap(FinalDataTree,
             type="index",
             border.col = c("black", "white"),
             palette = "Set1",
-            title= "Proportion of Final Data by Tag",
+            title= "Proportion of Final Data by Tag Across Workflow",
             position.legend = "bottom",
             fontsize.labels=c(0,10),
             lowerbound.cex.labels = 0.3,
             ) 
+
+FinalDataTree2 <- FinalDataTree[FinalDataTree$WORKFLOW_ID %in% unique(Zoon4$WORKFLOW_ID)[11:17],]
+FinalDataTree2List <- split(FinalDataTree2, f = FinalDataTree2$WORKFLOW_ID)
+
+lapply(names(FinalDataTree2List), function (x) treemap(FinalDataTree2List[[x]],
+            index=c("FinalData","METADATA_GROUP_CODE"),
+            vSize="N",
+            type="index",
+            border.col = c("black", "white"),
+            palette = "Set1",
+            title= paste0("Proportion of Final Data by Tag, Workflow:", x),
+            position.legend = "bottom",
+            fontsize.labels=c(0,10),
+            lowerbound.cex.labels = 0.3,
+            ))
 ```
 
-```{r}
-Zoon%>%group_by(WORKFLOW_ID)%>%summarise(N=n(), blank=sum(METADATA_GROUP_CODE == "PHOTO_TAG_BLANK"), propblank= blank/N)
+```{r deer, echo=FALSE}
+ggplot(Zoon4, aes(x=WORKFLOW_ID, y=prop.deer)) + geom_point() + geom_line() + labs(title = "Proportion Deer by Workflow", x="Workflow ID", y="proportion deer")
 
+```
+
+```{r deer and squirrel, echo=FALSE}
+
+ggplot(Zoon4, aes(x=WORKFLOW_ID, y=prop.deersquirrel)) + geom_point() + geom_line() + labs(title = "Proportion Deer and Squirrel by Workflow", x="Workflow ID", y="proportion deer + squirrel")
+```
+
+```{r deer/squirrel/blank, echo=FALSE}
+graphdf <- Zoon4%>%select(1,6,9)%>%mutate(deersquirrelblank= prop.deersquirrel + prop.blank)
+ggplot(graphdf, aes(x=WORKFLOW_ID, y=deersquirrelblank)) + geom_point() + geom_line() + labs(title = "Proportion Blank/Deer/Squirrel by Workflow", x="Workflow ID", y="proportion blank + deer + squirrel")
+```
+
+
+```{r interesting species, echo=FALSE}
+ggplot(Zoon4, aes(x=WORKFLOW_ID, y=prop.intspp)) + geom_point() + geom_line() + labs(title = "Proportion Interesting Species by Workflow", x="Workflow ID", y="proportion itnerseting spp.")
+```
+
+```{r diversity, echo=FALSE}
+ggplot(Zoon4, aes(x=WORKFLOW_ID, y=Richness)) + geom_point() + geom_line() + labs(title = "Species Richness by Workflow", x="Workflow ID", y="Richness")
+
+
+DivGraph <- Zoon4%>%select(1,12,16,17)%>%pivot_longer(cols=c("Simpson", "Shannon"), names_to = "IndexType")
+ggplot(DivGraph, aes(x=WORKFLOW_ID, y=value, color=IndexType)) + geom_point() + geom_line() + labs(title = "Diversity Indices by Workflow", x="Workflow ID", y="")
+```
+
+```{r camera measures, echo=FALSE}
+ggplot(Zoon4, aes(x=WORKFLOW_ID, y=mean.tags.percam)) + geom_point() + geom_line() + labs(title = "Mean tags per Camera by Workflow", x="Workflow ID", y="mean # of tags")
+ggplot(Zoon4, aes(x=WORKFLOW_ID, y=sd.tags.percam)) + geom_point() + geom_line() + labs(title = "Standard Deviation by Workflow", x="Workflow ID", y="std. dev")
 ```
 

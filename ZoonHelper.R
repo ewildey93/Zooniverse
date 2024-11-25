@@ -1,5 +1,6 @@
 View(Zoon[1:1000,])
 
+
 species <- sswidb::sswidb_species(conn)
 needprec <- data.frame("CLASS_METHOD"="ZOONIVERSE",
                        "SPECIES_NAME"=species$SPECIES_NAME[!(species$SPECIES_NAME %in% classprec2$SPECIES_NAME)],
@@ -22,4 +23,5 @@ DFSummary$n[DFSummary$SPPMode == "DEER"]
 sum(DFSummary$n[DFSummary$SPPMode != "DEER"])
 0.005
 
-p <- Zoon[is.na(Zoon$PRECISION),]
+p <- Zoon2[is.na(Zoon2$PRECISION),]
+unique(p$METADATA_GROUP_CODE)
